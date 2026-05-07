@@ -8,7 +8,7 @@ describe("memo", () => {
 		let count = $state(2);
 		const doubled = memo(
 			() => count,
-			(n) => n * 2
+			() => count * 2
 		);
 
 		expect(doubled.current).toBe(4);
@@ -25,10 +25,10 @@ describe("memo", () => {
 
 		const value = memo(
 			() => tracked,
-			(n) => {
+			() => {
 				runs++;
 				// reading `untracked` here must NOT register as a dependency
-				return n + untracked;
+				return tracked + untracked;
 			}
 		);
 
@@ -37,7 +37,6 @@ describe("memo", () => {
 
 		untracked = 200;
 		await sleep(0);
-		// reading current shouldn't recompute since the dep didn't change
 		expect(value.current).toBe(101);
 		expect(runs).toBe(1);
 
@@ -47,36 +46,14 @@ describe("memo", () => {
 		expect(runs).toBe(2);
 	});
 
-	testWithEffect("passes the previous value to the compute fn", async () => {
-		let count = $state(0);
-		const seen: Array<[number, number | undefined]> = [];
-
-		const value = memo(
-			() => count,
-			(curr, prev) => {
-				seen.push([curr, prev]);
-				return curr;
-			}
-		);
-
-		// Force the first computation.
-		expect(value.current).toBe(0);
-		expect(seen).toEqual([[0, undefined]]);
-
-		count = 1;
-		await sleep(0);
-		expect(value.current).toBe(1);
-		expect(seen).toEqual([
-			[0, undefined],
-			[1, 0],
-		]);
-	});
-
 	testWithEffect("supports an array of sources", async () => {
 		let a = $state(1);
 		let b = $state(2);
 
-		const sum = memo([() => a, () => b], ([x, y]) => x + y);
+		const sum = memo(
+			[() => a, () => b],
+			() => a + b
+		);
 
 		expect(sum.current).toBe(3);
 
@@ -89,22 +66,34 @@ describe("memo", () => {
 		expect(sum.current).toBe(30);
 	});
 
-	testWithEffect("array sources start with an empty array as previous", () => {
-		return new Promise<void>((resolve) => {
-			const a = $state(1);
-			const b = $state(2);
+	testWithEffect("only the listed sources trigger recomputation", async () => {
+		let tracked = $state(1);
+		let alsoRead = $state(10);
+		let runs = 0;
 
-			const value = memo([() => a, () => b], ([x, y], [px, py]) => {
-				expect(x).toBe(1);
-				expect(y).toBe(2);
-				expect(px).toBe(undefined);
-				expect(py).toBe(undefined);
-				resolve();
-				return x + y;
-			});
+		const value = memo(
+			() => tracked,
+			() => {
+				runs++;
+				return tracked + alsoRead;
+			}
+		);
 
-			// trigger the derivation
-			void value.current;
-		});
+		expect(value.current).toBe(11);
+		expect(runs).toBe(1);
+
+		// Changing a value that's read inside the compute body but not declared
+		// as a source should not cause a recomputation.
+		alsoRead = 20;
+		await sleep(0);
+		expect(value.current).toBe(11);
+		expect(runs).toBe(1);
+
+		// Changing the declared source should cause a recomputation, and it will
+		// pick up the latest value of the un-tracked read as well.
+		tracked = 2;
+		await sleep(0);
+		expect(value.current).toBe(22);
+		expect(runs).toBe(2);
 	});
 });

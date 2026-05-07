@@ -20,38 +20,17 @@ class MemoImpl<T> implements Memo<T> {
 	}
 }
 
-export function memo<T extends Array<unknown>, R>(
-	sources: { [K in keyof T]: Getter<T[K]> },
-	compute: (
-		values: T,
-		previousValues: { [K in keyof T]: T[K] | undefined }
-	) => R
-): Memo<R>;
-
-export function memo<T, R>(
-	source: Getter<T>,
-	compute: (value: T, previousValue: T | undefined) => R
-): Memo<R>;
-
-export function memo<T, R>(
-	sources: Getter<T> | Array<Getter<T>>,
-	compute: (
-		values: T | Array<T>,
-		previousValues: T | undefined | Array<T | undefined>
-	) => R
+export function memo<R>(
+	sources: Getter<unknown> | Array<Getter<unknown>>,
+	compute: () => R
 ): Memo<R> {
-	// Match `watch`'s convention: arrays start with `[]` so the callback can
-	// destructure on the first run, single sources start with `undefined`.
-	let previousValues: T | undefined | Array<T | undefined> = Array.isArray(sources)
-		? []
-		: undefined;
-
 	return new MemoImpl(() => {
-		const values = Array.isArray(sources)
-			? sources.map((source) => source())
-			: sources();
-		const result = untrack(() => compute(values, previousValues));
-		previousValues = values;
-		return result;
+		// Touch the sources so they register as dependencies.
+		if (Array.isArray(sources)) {
+			for (const source of sources) source();
+		} else {
+			sources();
+		}
+		return untrack(compute);
 	});
 }
